@@ -7,6 +7,8 @@ struct MessageBubbleView: View {
     /// streaming — shows the "repetir" (regenerate) button.
     var onRegenerate: (() -> Void)?
 
+    @State private var didCopy = false
+
     private var isUser: Bool { message.role == .user }
 
     var body: some View {
@@ -36,23 +38,46 @@ struct MessageBubbleView: View {
 
     @ViewBuilder
     private var footer: some View {
-        if message.role == .assistant && !message.isStreaming && (message.tokensPerSecond != nil || onRegenerate != nil) {
-            HStack(spacing: 8) {
-                if let tps = message.tokensPerSecond {
-                    Text(String(format: "%.1f tok/s", tps))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+        if message.role == .assistant && !message.isStreaming {
+            HStack(spacing: 10) {
+                Button {
+                    copyToClipboard()
+                } label: {
+                    Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Copiar la respuesta")
+
                 if let onRegenerate {
                     Button(action: onRegenerate) {
-                        Label("Repetir", systemImage: "arrow.clockwise")
-                            .font(.caption2)
+                        Image(systemName: "arrow.clockwise")
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                     .help("Repetir la pregunta y generar otra respuesta")
                 }
+
+                Spacer()
+
+                if let tps = message.tokensPerSecond {
+                    Text(String(format: "%.1f tok/s", tps))
+                        .foregroundStyle(.secondary)
+                }
             }
+            .font(.caption2)
+        }
+    }
+
+    private func copyToClipboard() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(message.content, forType: .string)
+
+        didCopy = true
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            didCopy = false
         }
     }
 
