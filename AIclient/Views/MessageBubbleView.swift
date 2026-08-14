@@ -62,12 +62,12 @@ struct MessageBubbleView: View {
                     .help("Repetir la pregunta y generar otra respuesta")
                 }
 
-                Spacer()
-
                 if let tps = message.tokensPerSecond {
                     Text(String(format: "%.1f tok/s", tps))
                         .foregroundStyle(.secondary)
                 }
+
+                Spacer()
             }
             .font(.caption2)
             // Only visible on hover, but still laid out (opacity, not
