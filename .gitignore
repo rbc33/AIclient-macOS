@@ -1,0 +1,23 @@
+# Xcode
+*.xcodeproj/
+!default.xcodeproj
+xcuserdata/
+*.xcuserstate
+DerivedData/
+.build/
+
+# XcodeGen genera AIclient.xcodeproj a partir de project.yml — no lo versiones
+AIclient.xcodeproj/
+
+# Build outputs de los scripts (Paso 3)
+build/
+*.ipa
+*.app
+*.dSYM
+*.dSYM.zip
+
+# macOS
+.DS_Store
+
+# Swift Package Manager (si se añade en el futuro)
+.swiftpm/

@@ -1,0 +1,56 @@
+name: AIclient
+
+options:
+  bundleIdPrefix: com.ricardobenthem
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Rellena con tu Team ID (Xcode > Settings > Accounts, o
+    # `security find-identity -v -p codesigning`) o hazlo desde Xcode
+    # tras generar el proyecto: target > Signing & Capabilities.
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_STRICT_CONCURRENCY: minimal
+
+targets:
+  AIclient:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: AIclient
+        excludes:
+          # Referenced directly via `info.path` / `entitlements.path` below —
+          # must NOT also be picked up by the source glob, or Xcode fails
+          # with "Multiple commands produce Info.plist".
+          - "Resources/Info.plist"
+          - "Resources/AIclient.entitlements"
+    info:
+      path: AIclient/Resources/Info.plist
+    entitlements:
+      path: AIclient/Resources/AIclient.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ricardobenthem.aiclient
+        PRODUCT_NAME: AIclient
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        COMBINE_HIDPI_IMAGES: true
+        ENABLE_HARDENED_RUNTIME: true
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+schemes:
+  AIclient:
+    build:
+      targets:
+        AIclient: all
+    run:
+      config: Debug
+    archive:
+      config: Release
