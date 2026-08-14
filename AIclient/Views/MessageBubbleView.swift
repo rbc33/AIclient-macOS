@@ -8,6 +8,7 @@ struct MessageBubbleView: View {
     var onRegenerate: (() -> Void)?
 
     @State private var didCopy = false
+    @State private var isHovering = false
 
     private var isUser: Bool { message.role == .user }
 
@@ -29,8 +30,11 @@ struct MessageBubbleView: View {
                 footer
             }
             .padding(10)
-            .background(isUser ? Color.accentColor.opacity(0.18) : Color(nsColor: .controlBackgroundColor))
+            // Assistant responses blend into the window background (no
+            // bubble box) — only the user's own messages get a tinted bubble.
+            .background(isUser ? Color.accentColor.opacity(0.18) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            .onHover { hovering in isHovering = hovering }
 
             if !isUser { Spacer(minLength: 40) }
         }
@@ -66,6 +70,11 @@ struct MessageBubbleView: View {
                 }
             }
             .font(.caption2)
+            // Only visible on hover, but still laid out (opacity, not
+            // conditional content) so the bubble doesn't jump in height.
+            .opacity(isHovering ? 1 : 0)
+            .allowsHitTesting(isHovering)
+            .animation(.easeInOut(duration: 0.12), value: isHovering)
         }
     }
 
@@ -118,6 +127,7 @@ struct MessageBubbleView: View {
         case .image: return "photo"
         case .pdf: return "doc.richtext"
         case .document: return "doc.text"
+        case .audio: return "waveform"
         }
     }
 }

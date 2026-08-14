@@ -7,6 +7,7 @@ enum AttachmentKind: String, Codable, Hashable {
     case image
     case pdf
     case document
+    case audio
 }
 
 /// A file attached to a chat message.

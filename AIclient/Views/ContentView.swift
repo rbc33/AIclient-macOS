@@ -32,7 +32,8 @@ struct ContentView: View {
                 ChatView(
                     conversation: conversation,
                     provider: providerStore.providers.first { $0.id == conversation.providerID },
-                    conversationStore: conversationStore
+                    conversationStore: conversationStore,
+                    providerStore: providerStore
                 )
                 .id(conversation.id)
             } else {
