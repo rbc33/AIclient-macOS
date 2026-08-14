@@ -5,6 +5,7 @@ xcuserdata/
 *.xcuserstate
 DerivedData/
 .build/
+dist/
 
 # XcodeGen genera AIclient.xcodeproj a partir de project.yml — no lo versiones
 AIclient.xcodeproj/
@@ -15,6 +16,7 @@ build/
 *.app
 *.dSYM
 *.dSYM.zip
+*.dmg
 
 # macOS
 .DS_Store

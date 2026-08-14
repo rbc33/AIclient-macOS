@@ -146,6 +146,49 @@ development team") aun sin haber puesto `AICLIENT_TEAM_ID`, revisa que no
 hayas fijado un Team a mano en Xcode con `CODE_SIGN_STYLE: Automatic` — en
 ese caso usa la variable de entorno con tu Team ID.
 
+## Empaquetar un `.dmg` con `make-dmg.sh`
+
+Requiere `create-dmg` (y opcionalmente `fileicon` para el icono del propio
+archivo `.dmg`):
+
+```bash
+brew install create-dmg
+brew install fileicon   # opcional
+```
+
+Para repartir la app (o simplemente tener un instalador de toda la vida en
+vez de depender de `build.sh` copiando a `/Applications`):
+
+```bash
+./make-dmg.sh
+```
+
+Compila en Release igual que `build.sh`, y además arma un `.dmg` de
+arrastrar-y-soltar con `create-dmg`: dentro va `AIclient.app` junto a un
+atajo a `/Applications`, como el instalador de cualquier app de macOS
+normal, con el icono de la propia app como icono del volumen montado. Lo
+deja en `dist/AIclient-<versión>.dmg` y abre esa carpeta en el Finder al
+terminar. Si tienes `fileicon` instalado, también le pone ese mismo icono
+al archivo `.dmg` en sí (el que ves en el Finder antes de montarlo) — sin
+`fileicon` el script avisa y sigue igual, solo que ese archivo se queda con
+el icono genérico de disco.
+
+Admite las mismas variables de entorno que `build.sh`
+(`AICLIENT_TEAM_ID`, `AICLIENT_SKIP_CLEAN`).
+
+**Sobre Gatekeeper**: sin `AICLIENT_TEAM_ID` la app queda firmada ad-hoc.
+Eso es suficiente para instalarla en tu propio Mac desde el `.dmg`, pero si
+le pasas el `.dmg` a otra persona/Mac, Gatekeeper la marcará como "de un
+desarrollador no identificado" — la primera vez tendrán que hacer clic
+derecho sobre la app → Abrir (en vez de doble clic normal). Para repartirla
+sin esa fricción hace falta:
+
+1. Un Team ID de pago en el Apple Developer Program.
+2. Firmar con ese Team (`AICLIENT_TEAM_ID=... ./make-dmg.sh`).
+3. Notarizarla con `xcrun notarytool submit` y "graparle" el ticket con
+   `xcrun stapler staple` — eso no lo hace este script; si llegas a
+   necesitarlo dime y lo añadimos.
+
 ## Siguiente paso
 
 Paso 2: `Networking/` (cliente OpenAI-compatible con streaming SSE) +
