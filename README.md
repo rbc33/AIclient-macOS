@@ -189,6 +189,71 @@ sin esa fricción hace falta:
    `xcrun stapler staple` — eso no lo hace este script; si llegas a
    necesitarlo dime y lo añadimos.
 
+## Búsqueda web (opcional): instalar SearXNG
+
+La app puede buscar en la web antes de responder (botón de globo en el chat),
+pero ningún backend de chat (Ollama, vLLM, llama.cpp…) navega por sí mismo —
+para eso la app necesita un buscador propio al que preguntarle. Usamos
+[SearXNG](https://github.com/searxng/searxng), un meta-buscador open source
+que te instalas tú (gratis, sin API key) y alcanzas por Tailscale igual que
+tus proveedores de modelos.
+
+Instrucciones para instalarlo con Docker Compose (el método oficial) en el
+mismo servidor donde ya corres Ollama/vLLM/etc.:
+
+```bash
+# 1. Carpeta del proyecto + plantillas oficiales
+mkdir -p ./searxng/core-config/
+cd ./searxng/
+curl -fsSL \
+    -O https://raw.githubusercontent.com/searxng/searxng/master/container/docker-compose.yml \
+    -O https://raw.githubusercontent.com/searxng/searxng/master/container/.env.example
+cp .env.example .env
+
+# 2. Config por defecto, para tenerla ANTES del primer arranque
+curl -fsSL -o core-config/settings.yml \
+    https://raw.githubusercontent.com/searxng/searxng/master/searx/settings.yml
+```
+
+Edita `core-config/settings.yml` y, bajo la clave `search:`, añade `json` a
+`formats:` (por defecto solo trae `html` — sin este cambio, la app recibe un
+HTTP 403 en cada búsqueda):
+
+```yaml
+search:
+  formats:
+    - html
+    - json
+```
+
+Arranca los contenedores (levanta el propio SearXNG más un Valkey para
+caché/límite de peticiones):
+
+```bash
+docker compose up -d
+```
+
+Por defecto queda escuchando en el puerto `8080` de esa máquina (cambiable
+con `SEARXNG_PORT` en `.env` antes de arrancar). Compruébalo:
+
+```bash
+curl "http://localhost:8080/search?q=test&format=json"
+```
+
+Si el servidor tiene Tailscale corriendo (como para tus proveedores de
+modelos), ya es alcanzable desde tu Mac en
+`http://ese-servidor.tailnet-1234.ts.net:8080` sin abrir nada más — no hace
+falta tocar `SEARXNG_HOSTNAME` ni ninguna config pensada para instancias
+públicas. Pega esa URL en **Búsqueda web** dentro de AIclient (icono de
+globo en la barra lateral) y pulsa "Probar búsqueda".
+
+Si más adelante vuelves a tocar `core-config/settings.yml`, reinicia para
+que cargue el cambio:
+
+```bash
+docker compose restart searxng
+```
+
 ## Siguiente paso
 
 Paso 2: `Networking/` (cliente OpenAI-compatible con streaming SSE) +
