@@ -3,8 +3,10 @@ import SwiftUI
 struct ContentView: View {
     @State private var providerStore = ProviderStore()
     @State private var conversationStore = ConversationStore()
+    @State private var webSearchStore = WebSearchStore()
     @State private var selectedConversationID: UUID?
     @State private var showingProviders = false
+    @State private var showingWebSearchSettings = false
 
     private var selectedConversation: Conversation? {
         guard let id = selectedConversationID else { return nil }
@@ -26,6 +28,13 @@ struct ContentView: View {
                         Label("Proveedores", systemImage: "server.rack")
                     }
                 }
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        showingWebSearchSettings = true
+                    } label: {
+                        Label("Búsqueda web", systemImage: "globe")
+                    }
+                }
             }
         } detail: {
             if let conversation = selectedConversation {
@@ -33,7 +42,8 @@ struct ContentView: View {
                     conversation: conversation,
                     provider: providerStore.providers.first { $0.id == conversation.providerID },
                     conversationStore: conversationStore,
-                    providerStore: providerStore
+                    providerStore: providerStore,
+                    webSearchStore: webSearchStore
                 )
                 .id(conversation.id)
             } else {
@@ -49,6 +59,9 @@ struct ContentView: View {
         .frame(minWidth: 760, minHeight: 480)
         .sheet(isPresented: $showingProviders) {
             ProviderListView(store: providerStore)
+        }
+        .sheet(isPresented: $showingWebSearchSettings) {
+            WebSearchSettingsView(store: webSearchStore)
         }
         .onAppear {
             if providerStore.providers.isEmpty {

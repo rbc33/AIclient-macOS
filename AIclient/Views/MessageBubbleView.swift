@@ -27,6 +27,10 @@ struct MessageBubbleView: View {
                     MarkdownContentView(content: message.content)
                 }
 
+                if let sources = message.webSources, !sources.isEmpty {
+                    sourcesRow(sources)
+                }
+
                 footer
             }
             .padding(10)
@@ -76,6 +80,28 @@ struct MessageBubbleView: View {
             .allowsHitTesting(isHovering)
             .animation(.easeInOut(duration: 0.12), value: isHovering)
         }
+    }
+
+    /// Shown below the response whenever it was answered with web search
+    /// results folded in as context — always visible (unlike the hover-only
+    /// footer), since it's substantive info about where the answer came
+    /// from, not a secondary action.
+    private func sourcesRow(_ sources: [WebSource]) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Label("Fuentes", systemImage: "globe")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            ForEach(sources) { source in
+                Link(destination: source.url) {
+                    Text(source.title)
+                        .font(.caption2)
+                        .underline()
+                        .lineLimit(1)
+                }
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.top, 2)
     }
 
     private func copyToClipboard() {

@@ -32,6 +32,11 @@ struct ChatMessage: Identifiable, Codable, Hashable {
     /// don't report timing themselves.
     var tokenCount: Int?
 
+    /// Set on an assistant message when it was answered with web search
+    /// results folded into the request as context — lets the UI show a
+    /// "Fuentes" row linking back to what was searched.
+    var webSources: [WebSource]?
+
     init(
         id: UUID = UUID(),
         role: MessageRole,
@@ -40,7 +45,8 @@ struct ChatMessage: Identifiable, Codable, Hashable {
         createdAt: Date = .now,
         isStreaming: Bool = false,
         tokensPerSecond: Double? = nil,
-        tokenCount: Int? = nil
+        tokenCount: Int? = nil,
+        webSources: [WebSource]? = nil
     ) {
         self.id = id
         self.role = role
@@ -50,6 +56,7 @@ struct ChatMessage: Identifiable, Codable, Hashable {
         self.isStreaming = isStreaming
         self.tokensPerSecond = tokensPerSecond
         self.tokenCount = tokenCount
+        self.webSources = webSources
     }
 }
 

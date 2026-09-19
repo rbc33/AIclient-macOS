@@ -19,15 +19,21 @@ final class ChatViewModel {
     var draftText: String = ""
     var isSending = false
     var errorMessage: String?
+    /// True only while a web search is in flight, before the model has
+    /// started answering — lets `ChatView` show a "Buscando en la web…"
+    /// status distinct from the regular streaming indicator.
+    var isSearchingWeb = false
 
     private let store: ConversationStore
+    private let webSearchStore: WebSearchStore
     private let client = OpenAICompatibleClient()
     private var streamTask: Task<Void, Never>?
 
-    init(conversation: Conversation, provider: ProviderConfig?, store: ConversationStore) {
+    init(conversation: Conversation, provider: ProviderConfig?, store: ConversationStore, webSearchStore: WebSearchStore) {
         self.conversation = conversation
         self.provider = provider
         self.store = store
+        self.webSearchStore = webSearchStore
     }
 
     var canRegenerate: Bool {
@@ -40,7 +46,11 @@ final class ChatViewModel {
     ///   still only sends the text (see `OpenAICompatibleClient` — wiring
     ///   images into the `image_url` multimodal content format is
     ///   follow-up work).
-    func send(attachments: [Attachment] = []) {
+    /// - Parameter webSearch: true when the "buscar en la web" toggle was on
+    ///   for this message. Only takes effect if a `WebSearchConfig` is
+    ///   actually saved (`ChatView`'s globe button opens Ajustes instead of
+    ///   enabling the toggle when none is set, but this is a second guard).
+    func send(attachments: [Attachment] = [], webSearch: Bool = false) {
         let text = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachments.isEmpty, provider != nil else { return }
         draftText = ""
@@ -68,12 +78,21 @@ final class ChatViewModel {
         conversation.updatedAt = .now
         persist()
 
-        beginStreaming(outgoing: outgoing, assistantID: assistantMessage.id)
+        if webSearch, !text.isEmpty, let searchConfig = webSearchStore.config {
+            beginStreamingWithWebSearch(query: text, outgoing: outgoing, assistantID: assistantMessage.id, config: searchConfig)
+        } else {
+            beginStreaming(outgoing: outgoing, assistantID: assistantMessage.id)
+        }
     }
 
     /// Drops the last assistant response and re-asks the backend with the
     /// same conversation up to (and including) the preceding user message —
-    /// the "repetir" button on the last response.
+    /// the "repetir" button on the last response. Doesn't redo a web search
+    /// even if the original response used one: search results are folded
+    /// into the request as context only for that one call, not saved into
+    /// `conversation.messages`, so a regenerate re-answers from the plain
+    /// conversation history alone (and the new response won't show a
+    /// "Fuentes" row).
     func regenerateLastResponse() {
         guard !isSending, provider != nil else { return }
         guard let lastAssistantIndex = conversation.messages.lastIndex(where: { $0.role == .assistant }) else { return }
@@ -108,30 +127,78 @@ final class ChatViewModel {
     }
 
     private func beginStreaming(outgoing: [ChatMessage], assistantID: UUID) {
-        guard let provider else { return }
+        guard provider != nil else { return }
         isSending = true
+        streamTask = Task {
+            await runStreaming(outgoing: outgoing, assistantID: assistantID)
+        }
+    }
+
+    /// Fetches web search results for `query` first, folds them into
+    /// `outgoing` as a leading system-role message (for this one request
+    /// only — not saved into `conversation.messages`), and records the
+    /// sources used onto the assistant message so `MessageBubbleView` can
+    /// show a "Fuentes" row. A search failure doesn't block the chat: it
+    /// falls back to answering without search context, with a note in
+    /// `errorMessage`.
+    private func beginStreamingWithWebSearch(query: String, outgoing: [ChatMessage], assistantID: UUID, config: WebSearchConfig) {
+        guard provider != nil else { return }
+        isSending = true
+        isSearchingWeb = true
+        streamTask = Task {
+            var augmented = outgoing
+            do {
+                let results = try await WebSearchClient.search(query: query, config: config)
+                let contextMessage = ChatMessage(
+                    role: .system,
+                    content: WebSearchClient.formatContext(query: query, results: results)
+                )
+                augmented.insert(contextMessage, at: max(augmented.count - 1, 0))
+                attachSources(results.map { WebSource(title: $0.title, url: $0.url) }, toAssistantID: assistantID)
+            } catch {
+                if !Task.isCancelled {
+                    errorMessage = "No se pudo buscar en la web (\(error.localizedDescription)) — respondiendo sin resultados de búsqueda."
+                }
+            }
+            isSearchingWeb = false
+
+            guard !Task.isCancelled else {
+                markMessageStreamingFailed(id: assistantID, placeholderIfEmpty: false)
+                isSending = false
+                persist()
+                return
+            }
+            await runStreaming(outgoing: augmented, assistantID: assistantID)
+        }
+    }
+
+    private func runStreaming(outgoing: [ChatMessage], assistantID: UUID) async {
+        guard let provider else { return }
         let start = Date()
 
-        streamTask = Task {
-            do {
-                for try await event in client.streamChatCompletion(provider: provider, messages: outgoing) {
-                    switch event {
-                    case .delta(let delta):
-                        appendToAssistantMessage(id: assistantID, text: delta)
-                    case .finished(let tokenCount):
-                        finishAssistantMessage(id: assistantID, tokenCount: tokenCount, elapsed: Date().timeIntervalSince(start))
-                    }
+        do {
+            for try await event in client.streamChatCompletion(provider: provider, messages: outgoing) {
+                switch event {
+                case .delta(let delta):
+                    appendToAssistantMessage(id: assistantID, text: delta)
+                case .finished(let tokenCount):
+                    finishAssistantMessage(id: assistantID, tokenCount: tokenCount, elapsed: Date().timeIntervalSince(start))
                 }
-            } catch is CancellationError {
-                // User hit stop — keep whatever partial content arrived.
-                markMessageStreamingFailed(id: assistantID, placeholderIfEmpty: false)
-            } catch {
-                errorMessage = error.localizedDescription
-                markMessageStreamingFailed(id: assistantID, placeholderIfEmpty: true)
             }
-            isSending = false
-            persist()
+        } catch is CancellationError {
+            // User hit stop — keep whatever partial content arrived.
+            markMessageStreamingFailed(id: assistantID, placeholderIfEmpty: false)
+        } catch {
+            errorMessage = error.localizedDescription
+            markMessageStreamingFailed(id: assistantID, placeholderIfEmpty: true)
         }
+        isSending = false
+        persist()
+    }
+
+    private func attachSources(_ sources: [WebSource], toAssistantID id: UUID) {
+        guard let idx = conversation.messages.firstIndex(where: { $0.id == id }) else { return }
+        conversation.messages[idx].webSources = sources
     }
 
     private func appendToAssistantMessage(id: UUID, text: String) {

@@ -6,11 +6,18 @@ import AVFoundation
 struct ChatView: View {
     @State private var viewModel: ChatViewModel
     var providerStore: ProviderStore
+    var webSearchStore: WebSearchStore
 
     @State private var pendingAttachments: [Attachment] = []
     @State private var showingImageImporter = false
     @State private var showingFileImporter = false
     @State private var attachmentError: String?
+
+    /// On for the *next* message only — resets after sending, like
+    /// `pendingAttachments`. Tapping the globe button opens Ajustes instead
+    /// of turning this on when no `WebSearchConfig` is saved yet.
+    @State private var webSearchEnabled = false
+    @State private var showingWebSearchSettings = false
 
     /// Models fetched from each provider's `/v1/models`, keyed by provider
     /// id — powers the combined provider+model picker below, which needs
@@ -26,9 +33,10 @@ struct ChatView: View {
     private static let maxAttachmentMB = 8
     private static let maxAttachmentBytes = maxAttachmentMB * 1024 * 1024
 
-    init(conversation: Conversation, provider: ProviderConfig?, conversationStore: ConversationStore, providerStore: ProviderStore) {
-        _viewModel = State(wrappedValue: ChatViewModel(conversation: conversation, provider: provider, store: conversationStore))
+    init(conversation: Conversation, provider: ProviderConfig?, conversationStore: ConversationStore, providerStore: ProviderStore, webSearchStore: WebSearchStore) {
+        _viewModel = State(wrappedValue: ChatViewModel(conversation: conversation, provider: provider, store: conversationStore, webSearchStore: webSearchStore))
         self.providerStore = providerStore
+        self.webSearchStore = webSearchStore
     }
 
     var body: some View {
@@ -49,6 +57,17 @@ struct ChatView: View {
                     .foregroundStyle(.red)
                     .padding(.horizontal)
                     .padding(.top, 4)
+            }
+
+            if viewModel.isSearchingWeb {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Buscando en la web…")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
+                .padding(.top, 4)
             }
 
             if !pendingAttachments.isEmpty {
@@ -76,6 +95,9 @@ struct ChatView: View {
         }
         .task(id: providerStore.providers.map(\.id)) {
             await loadAllModels()
+        }
+        .sheet(isPresented: $showingWebSearchSettings) {
+            WebSearchSettingsView(store: webSearchStore)
         }
     }
 
@@ -244,6 +266,23 @@ struct ChatView: View {
             .disabled(viewModel.provider == nil)
             .help("Pegar (texto o imagen del portapapeles)")
 
+            Button {
+                if webSearchStore.config == nil {
+                    showingWebSearchSettings = true
+                } else {
+                    webSearchEnabled.toggle()
+                }
+            } label: {
+                Image(systemName: "globe")
+                    .font(.title2)
+                    .foregroundStyle(webSearchEnabled ? Color.accentColor : .primary)
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.provider == nil)
+            .help(webSearchStore.config == nil
+                ? "Configura un buscador web (SearXNG)"
+                : (webSearchEnabled ? "Búsqueda web activada para el próximo mensaje" : "Buscar en la web antes de responder"))
+
             TextField("Escribe un mensaje…", text: $viewModel.draftText, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...6)
@@ -295,8 +334,9 @@ struct ChatView: View {
 
     private func send() {
         let attachments = pendingAttachments
-        viewModel.send(attachments: attachments)
+        viewModel.send(attachments: attachments, webSearch: webSearchEnabled)
         pendingAttachments = []
+        webSearchEnabled = false
     }
 
     /// Only the last assistant message gets a "repetir" button, and only
