@@ -131,11 +131,19 @@ struct ChatView: View {
 
     /// Inline provider+model switcher, à la Claude's composer — one control
     /// showing "Proveedor · modelo". Opening it lists every configured
-    /// provider as a submenu (each with its own models fetched from that
-    /// provider's `/v1/models`); picking a model there switches both the
-    /// provider and the model in a single gesture, and persists the choice
-    /// on the provider (its default model) and on this conversation (which
-    /// provider it uses).
+    /// provider as a labeled section (each with its own models fetched from
+    /// that provider's `/v1/models`); picking a model there switches both
+    /// the provider and the model in a single gesture, and persists the
+    /// choice on the provider (its default model) and on this conversation
+    /// (which provider it uses).
+    ///
+    /// Deliberately flat (`Section`s in one top-level menu), not nested
+    /// `Menu`s-within-`Menu`s — macOS/AppKit can cache a submenu's items
+    /// from the moment it's first built, so if a provider's models arrive
+    /// (async, from `/v1/models`) after that, the submenu can get stuck
+    /// showing stale/empty content on reopen. A single top-level menu is
+    /// rebuilt fresh every time it's opened, so it always reflects the
+    /// latest `modelsByProvider`.
     private var providerModelPickerRow: some View {
         HStack {
             Menu {
@@ -143,14 +151,8 @@ struct ChatView: View {
                     Text("Sin proveedores — añade uno en Proveedores")
                 } else {
                     ForEach(providerStore.providers) { provider in
-                        Menu {
-                            providerModelSubmenu(for: provider)
-                        } label: {
-                            if provider.id == viewModel.provider?.id {
-                                Label(provider.name, systemImage: "checkmark")
-                            } else {
-                                Text(provider.name)
-                            }
+                        Section(provider.name) {
+                            providerModelMenuItems(for: provider)
                         }
                     }
                 }
@@ -184,7 +186,7 @@ struct ChatView: View {
     }
 
     @ViewBuilder
-    private func providerModelSubmenu(for provider: ProviderConfig) -> some View {
+    private func providerModelMenuItems(for provider: ProviderConfig) -> some View {
         let models = modelsByProvider[provider.id] ?? []
         if loadingProviderIDs.contains(provider.id) {
             Text("Cargando modelos…")
