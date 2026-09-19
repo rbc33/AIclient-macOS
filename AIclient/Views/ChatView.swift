@@ -12,8 +12,12 @@ struct ChatView: View {
     @State private var showingFileImporter = false
     @State private var attachmentError: String?
 
-    @State private var availableModels: [String] = []
-    @State private var isLoadingModels = false
+    /// Models fetched from each provider's `/v1/models`, keyed by provider
+    /// id — powers the combined provider+model picker below, which needs
+    /// every provider's models (not just the active one) to build its
+    /// submenus.
+    @State private var modelsByProvider: [UUID: [String]] = [:]
+    @State private var loadingProviderIDs: Set<UUID> = []
 
     @State private var audioRecorder: AVAudioRecorder?
     @State private var recordingURL: URL?
@@ -51,7 +55,7 @@ struct ChatView: View {
                 pendingAttachmentsRow
             }
 
-            modelPickerRow
+            providerModelPickerRow
 
             inputBar
         }
@@ -70,8 +74,8 @@ struct ChatView: View {
         ) { result in
             handleImportResult(result, forcedKind: nil)
         }
-        .task(id: viewModel.provider?.id) {
-            await loadModels()
+        .task(id: providerStore.providers.map(\.id)) {
+            await loadAllModels()
         }
     }
 
@@ -125,33 +129,34 @@ struct ChatView: View {
         }
     }
 
-    /// Inline model switcher, à la Claude's composer — shows the current
-    /// provider's model and, on tap, a menu of models fetched from that
-    /// provider's `/v1/models`. Picking one updates the provider (and
-    /// persists it via `providerStore`), so it applies from here on.
-    private var modelPickerRow: some View {
+    /// Inline provider+model switcher, à la Claude's composer — one control
+    /// showing "Proveedor · modelo". Opening it lists every configured
+    /// provider as a submenu (each with its own models fetched from that
+    /// provider's `/v1/models`); picking a model there switches both the
+    /// provider and the model in a single gesture, and persists the choice
+    /// on the provider (its default model) and on this conversation (which
+    /// provider it uses).
+    private var providerModelPickerRow: some View {
         HStack {
             Menu {
-                if isLoadingModels {
-                    Text("Cargando modelos…")
-                } else if availableModels.isEmpty {
-                    Text("Sin modelos — revisa el proveedor")
+                if providerStore.providers.isEmpty {
+                    Text("Sin proveedores — añade uno en Proveedores")
                 } else {
-                    ForEach(availableModels, id: \.self) { modelID in
-                        Button {
-                            selectModel(modelID)
+                    ForEach(providerStore.providers) { provider in
+                        Menu {
+                            providerModelSubmenu(for: provider)
                         } label: {
-                            if modelID == viewModel.provider?.model {
-                                Label(modelID, systemImage: "checkmark")
+                            if provider.id == viewModel.provider?.id {
+                                Label(provider.name, systemImage: "checkmark")
                             } else {
-                                Text(modelID)
+                                Text(provider.name)
                             }
                         }
                     }
                 }
             } label: {
                 HStack(spacing: 4) {
-                    Text(viewModel.provider?.model ?? "Sin modelo")
+                    Text(pickerLabel)
                         .lineLimit(1)
                     Image(systemName: "chevron.down")
                         .font(.caption2)
@@ -164,12 +169,44 @@ struct ChatView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .disabled(viewModel.provider == nil)
+            .disabled(providerStore.providers.isEmpty)
 
             Spacer()
         }
         .padding(.horizontal)
         .padding(.top, 6)
+    }
+
+    private var pickerLabel: String {
+        guard let provider = viewModel.provider else { return "Elegir proveedor" }
+        let model = provider.model.isEmpty ? "sin modelo" : provider.model
+        return "\(provider.name) · \(model)"
+    }
+
+    @ViewBuilder
+    private func providerModelSubmenu(for provider: ProviderConfig) -> some View {
+        let models = modelsByProvider[provider.id] ?? []
+        if loadingProviderIDs.contains(provider.id) {
+            Text("Cargando modelos…")
+        } else if models.isEmpty {
+            Button {
+                selectProviderAndModel(provider, modelID: provider.model)
+            } label: {
+                Text(provider.model.isEmpty ? "Usar este proveedor" : "Usar (modelo actual: \(provider.model))")
+            }
+        } else {
+            ForEach(models, id: \.self) { modelID in
+                Button {
+                    selectProviderAndModel(provider, modelID: modelID)
+                } label: {
+                    if provider.id == viewModel.provider?.id && modelID == provider.model {
+                        Label(modelID, systemImage: "checkmark")
+                    } else {
+                        Text(modelID)
+                    }
+                }
+            }
+        }
     }
 
     private var inputBar: some View {
@@ -270,21 +307,46 @@ struct ChatView: View {
         return { viewModel.regenerateLastResponse() }
     }
 
-    private func selectModel(_ modelID: String) {
-        guard var provider = viewModel.provider else { return }
-        provider.model = modelID
-        viewModel.provider = provider
-        providerStore.upsert(provider)
+    /// Switches the active conversation to `provider` (persisting that on
+    /// the conversation) and records `modelID` as that provider's model
+    /// (persisting that on the provider itself) — one tap in the picker
+    /// covers both.
+    private func selectProviderAndModel(_ provider: ProviderConfig, modelID: String) {
+        var updated = provider
+        updated.model = modelID
+        providerStore.upsert(updated)
+        viewModel.setProvider(updated)
     }
 
-    private func loadModels() async {
-        guard let provider = viewModel.provider else { return }
-        isLoadingModels = true
-        let apiKey = provider.hasAPIKey ? KeychainStore.apiKey(for: provider.id) : nil
-        let result = await ProviderConnectionTester.testConnection(baseURL: provider.baseURL, apiKey: apiKey)
-        isLoadingModels = false
-        if case .success(let models) = result {
-            availableModels = models
+    /// Fetches `/v1/models` for every configured provider concurrently, so
+    /// the combined picker can show each provider's full model list in its
+    /// submenu without waiting for you to open it. Providers already loaded
+    /// or currently loading are skipped on repeat calls (e.g. after the
+    /// provider list changes elsewhere).
+    private func loadAllModels() async {
+        let providers = providerStore.providers
+        let toFetch = providers.filter { !loadingProviderIDs.contains($0.id) }
+        guard !toFetch.isEmpty else { return }
+
+        for provider in toFetch { loadingProviderIDs.insert(provider.id) }
+
+        await withTaskGroup(of: (UUID, [String]?).self) { group in
+            for provider in toFetch {
+                group.addTask {
+                    let apiKey = provider.hasAPIKey ? KeychainStore.apiKey(for: provider.id) : nil
+                    let result = await ProviderConnectionTester.testConnection(baseURL: provider.baseURL, apiKey: apiKey)
+                    if case .success(let models) = result {
+                        return (provider.id, models)
+                    }
+                    return (provider.id, nil)
+                }
+            }
+            for await (providerID, models) in group {
+                loadingProviderIDs.remove(providerID)
+                if let models {
+                    modelsByProvider[providerID] = models
+                }
+            }
         }
     }
 

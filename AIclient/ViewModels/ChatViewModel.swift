@@ -96,6 +96,17 @@ final class ChatViewModel {
         streamTask?.cancel()
     }
 
+    /// Switches this conversation to a different provider (and/or model) —
+    /// called from the combined provider+model picker in `ChatView`. Updates
+    /// `conversation.providerID` too, so the choice sticks the next time this
+    /// conversation is opened, not just for the rest of this session.
+    func setProvider(_ newProvider: ProviderConfig) {
+        provider = newProvider
+        conversation.providerID = newProvider.id
+        conversation.updatedAt = .now
+        persist()
+    }
+
     private func beginStreaming(outgoing: [ChatMessage], assistantID: UUID) {
         guard let provider else { return }
         isSending = true
