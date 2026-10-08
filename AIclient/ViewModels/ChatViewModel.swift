@@ -42,10 +42,10 @@ final class ChatViewModel {
 
     /// - Parameter attachments: images/files picked via the "+"/paste
     ///   buttons in `ChatView`. They're attached to the outgoing user
-    ///   message and shown in the transcript; the backend request itself
-    ///   still only sends the text (see `OpenAICompatibleClient` — wiring
-    ///   images into the `image_url` multimodal content format is
-    ///   follow-up work).
+    ///   message and shown in the transcript; `.image` attachments are also
+    ///   sent to the backend as `image_url` content parts (needs a
+    ///   vision-capable model loaded there) — PDFs/documents/audio aren't
+    ///   sent yet (see `OpenAICompatibleClient`).
     /// - Parameter webSearch: true when the "buscar en la web" toggle was on
     ///   for this message. Only takes effect if a `WebSearchConfig` is
     ///   actually saved (`ChatView`'s globe button opens Ajustes instead of

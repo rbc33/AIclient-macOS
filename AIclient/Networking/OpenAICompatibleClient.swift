@@ -29,9 +29,12 @@ enum StreamEvent {
 /// Ollama, NVIDIA NIM, vLLM and llama.cpp — they all speak
 /// `POST /v1/chat/completions` with SSE streaming.
 ///
-/// Note: `ChatMessage.attachments` aren't sent to the backend yet — wiring
-/// images into the OpenAI `image_url` content-part format (and deciding how
-/// each backend wants PDFs/documents) is follow-up work.
+/// Note: only `.image` attachments are actually sent to the backend (as
+/// base64 `image_url` content parts — see `requestMessage(for:)`). Whether
+/// the model does anything useful with them is up to the backend/model
+/// (needs a vision-capable model loaded); non-image attachments
+/// (PDF/document/audio) still aren't sent — deciding how each backend wants
+/// those is follow-up work.
 struct OpenAICompatibleClient {
     func streamChatCompletion(
         provider: ProviderConfig,
@@ -52,7 +55,7 @@ struct OpenAICompatibleClient {
 
                     let body = ChatCompletionRequest(
                         model: provider.model,
-                        messages: messages.map { .init(role: $0.role.rawValue, content: $0.content) }
+                        messages: messages.map(Self.requestMessage(for:))
                     )
                     request.httpBody = try JSONEncoder().encode(body)
 
@@ -90,5 +93,26 @@ struct OpenAICompatibleClient {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    /// Plain string content for a message with no image attachments (every
+    /// backend understands that shape); an array of `text` + `image_url`
+    /// parts — OpenAI's vision format — the moment there's at least one
+    /// `.image` attachment.
+    private static func requestMessage(for message: ChatMessage) -> ChatCompletionRequest.RequestMessage {
+        let images = message.attachments.filter { $0.kind == .image }
+        guard !images.isEmpty else {
+            return .init(role: message.role.rawValue, content: .text(message.content))
+        }
+
+        var parts: [ChatCompletionRequest.RequestMessage.MessageContent.ContentPart] = []
+        if !message.content.isEmpty {
+            parts.append(.text(message.content))
+        }
+        for image in images {
+            let dataURI = "data:\(image.mimeType);base64,\(image.data.base64EncodedString())"
+            parts.append(.imageURL(dataURI: dataURI))
+        }
+        return .init(role: message.role.rawValue, content: .parts(parts))
     }
 }

@@ -13,7 +13,54 @@ struct ChatCompletionRequest: Encodable {
 
     struct RequestMessage: Encodable {
         var role: String
-        var content: String
+        var content: MessageContent
+    }
+
+    /// `content` in the OpenAI chat completions schema is either a plain
+    /// string (what every backend accepts for text-only messages) or an
+    /// array of typed parts — needed to attach images. We default to the
+    /// plain string form whenever there's no image, for maximum
+    /// compatibility with backends/models that only understand that shape.
+    enum MessageContent: Encodable {
+        case text(String)
+        case parts([ContentPart])
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            switch self {
+            case .text(let value):
+                try container.encode(value)
+            case .parts(let parts):
+                try container.encode(parts)
+            }
+        }
+
+        struct ContentPart: Encodable {
+            var type: String
+            var text: String?
+            var imageURL: ImageURL?
+
+            struct ImageURL: Encodable {
+                /// A `data:<mime>;base64,<...>` URI — every backend we
+                /// target (llama.cpp/llama-swap, Ollama, vLLM, NVIDIA NIM)
+                /// accepts an inline data URI here, so there's no need to
+                /// host the image anywhere first.
+                var url: String
+            }
+
+            enum CodingKeys: String, CodingKey {
+                case type, text
+                case imageURL = "image_url"
+            }
+
+            static func text(_ value: String) -> ContentPart {
+                ContentPart(type: "text", text: value, imageURL: nil)
+            }
+
+            static func imageURL(dataURI: String) -> ContentPart {
+                ContentPart(type: "image_url", text: nil, imageURL: ImageURL(url: dataURI))
+            }
+        }
     }
 
     struct StreamOptions: Encodable {
