@@ -105,7 +105,7 @@ struct OpenAICompatibleClient {
             return .init(role: message.role.rawValue, content: .text(message.content))
         }
 
-        var parts: [ChatCompletionRequest.RequestMessage.MessageContent.ContentPart] = []
+        var parts: [ChatCompletionRequest.MessageContent.ContentPart] = []
         if !message.content.isEmpty {
             parts.append(.text(message.content))
         }
