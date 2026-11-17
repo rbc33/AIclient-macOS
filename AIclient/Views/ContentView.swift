@@ -56,7 +56,7 @@ struct ContentView: View {
                 )
             }
         }
-        .frame(minWidth: 760, minHeight: 480)
+        .macOSMinFrame(width: 760, height: 480)
         .sheet(isPresented: $showingProviders) {
             ProviderListView(store: providerStore)
         }

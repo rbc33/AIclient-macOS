@@ -1,9 +1,12 @@
-# AIclient (macOS) — Paso 1: estructura del proyecto y modelos base
+# AIclient (macOS + iOS)
 
-Cliente de chat SwiftUI nativo de macOS para backends OpenAI-compatible
-(Ollama, NVIDIA NIM, vLLM, llama.cpp) accesibles vía Tailscale.
+Cliente de chat SwiftUI nativo para backends OpenAI-compatible (Ollama,
+NVIDIA NIM, vLLM, llama.cpp/llama-swap) accesibles vía Tailscale.
 
-> Proyecto solo macOS — sin target ni build de iOS.
+> Dos targets que comparten exactamente el mismo código: **AIclient** (macOS
+> 14+) y **AIclient-iOS** (iPhone + iPad, iOS 17+). La versión iOS se
+> instala con SideStore — ver
+> [Versión iOS: instalar con SideStore](#versión-ios-instalar-con-sidestore).
 
 ## Por qué XcodeGen en vez de crear el proyecto a mano
 
@@ -188,6 +191,143 @@ sin esa fricción hace falta:
 3. Notarizarla con `xcrun notarytool submit` y "graparle" el ticket con
    `xcrun stapler staple` — eso no lo hace este script; si llegas a
    necesitarlo dime y lo añadimos.
+
+## Versión iOS: instalar con SideStore
+
+`project.yml` define un segundo target, **AIclient-iOS** (universal: iPhone
+y iPad, iOS 17+), que compila las mismas fuentes que el de Mac. Lo que
+cambia por plataforma está detrás de `#if os(macOS)` / `#if os(iOS)`, casi
+todo en `AIclient/Views/PlatformCompat.swift`. Diferencias visibles en iOS:
+
+- **Fotos** abre la fototeca del sistema (no el navegador de Archivos); las
+  fotos se reducen a 2048 px y se mandan como JPEG.
+- **Pegar** (imagen o texto del portapapeles) está dentro del menú **+**,
+  porque en iPhone no cabe un botón más en la barra de escribir.
+- Los botones de copiar/repetir y los tok/s de cada respuesta se ven
+  siempre (en iPhone no hay "hover").
+- El micrófono pide permiso la primera vez.
+
+### 1. Compilar el `.ipa` y generar `apps.json`
+
+```bash
+./build-ipa.sh
+```
+
+Compila **sin firmar** (SideStore re-firma cada app con tu Apple ID al
+instalarla, así que no hace falta cuenta de desarrollador de pago), deja el
+resultado en `dist/AIclient.ipa` y escribe/actualiza `apps.json` en la raíz
+del repo: la "fuente" que SideStore lee para saber qué versiones hay, dónde
+descargarlas, su tamaño, el icono, los permisos, etc.
+
+`apps.json` apunta a GitHub (el repo de `git remote origin`):
+
+- el `.ipa` → asset de una **GitHub Release** con tag `v<versión>`
+- `apps.json` y el icono → rama `main`, servidos por `raw.githubusercontent.com`
+
+> El repo tiene que ser **público**: SideStore descarga sin credenciales.
+
+### 2. Publicarlo
+
+Con la CLI de GitHub (`brew install gh && gh auth login`), lo más cómodo es
+que el propio script lo publique todo:
+
+```bash
+AICLIENT_PUBLISH=1 ./build-ipa.sh
+```
+
+Eso crea la release `v<versión>` con el `.ipa` adjunto y hace commit + push
+de `apps.json` (y del icono). Si prefieres hacerlo a mano, el script te
+imprime los comandos exactos al terminar.
+
+### 3. Añadir la fuente en el iPhone
+
+En SideStore: **Sources → +** y pega:
+
+```
+https://raw.githubusercontent.com/<usuario>/<repo>/main/apps.json
+```
+
+(el script te imprime la URL exacta). AIclient aparece en la fuente y se
+instala desde ahí.
+
+### Sacar una versión nueva
+
+Sube `MARKETING_VERSION` en `project.yml` (por ejemplo `1.0.0` → `1.0.1`) y
+vuelve a correr `AICLIENT_PUBLISH=1 ./build-ipa.sh`. La versión tiene que
+cambiar para que SideStore la ofrezca como actualización; las anteriores se
+conservan en `apps.json`. Variables opcionales del script:
+`AICLIENT_RELEASE_NOTES` (por defecto, el último mensaje de commit),
+`AICLIENT_GITHUB_REPO`, `AICLIENT_DEVELOPER_NAME`, `AICLIENT_SKIP_CLEAN=1`.
+
+### Info.plist y entitlements
+
+`AIclient/Resources/Info.plist` (Mac), `Info-iOS.plist` (iOS) y
+`AIclient.entitlements` (Mac) están escritos a mano y enlazados con
+`INFOPLIST_FILE` / `CODE_SIGN_ENTITLEMENTS`. Antes se generaban con las
+claves `info:`/`entitlements:` de XcodeGen, que **reescriben esos archivos
+en cada `xcodegen generate`** y borraban lo añadido a mano. Ambos plists
+permiten HTTP plano (`NSAllowsArbitraryLoads`) para hablar con los
+servidores de tu tailnet por `http://…ts.net`.
+
+## Aplicar un zip de cambios: `update-client.sh`
+
+Cuando recibas un `AIclient-build.zip` con cambios, déjalo en `~/code/swift`
+y ejecuta:
+
+```bash
+./update-client.sh
+```
+
+Solo descomprime el zip y copia sus archivos encima del repo (sin tocar
+`.git`, `build/` ni `dist/`, y sin borrar nada tuyo). El commit, el push y la
+release los hace `release.sh`. `AICLIENT_ZIP=/ruta/al.zip` para usar otro
+zip.
+
+## Publicar una versión: `release.sh`
+
+Todo de una vez, para Mac e iOS:
+
+```bash
+./release.sh "Mensaje del commit"             # siguiente parche: 1.0.3 -> 1.0.4
+./release.sh "Mensaje del commit" --minor     # 1.0.3 -> 1.1.0
+./release.sh "Mensaje del commit" --major     # 1.4.2 -> 2.0.0
+./release.sh 0.1.0 "Mensaje del commit"       # versión explícita
+./release.sh "Mensaje" --replace              # rehacer la última versión publicada
+```
+
+La versión la lleva el script: busca la etiqueta `vX.Y.Z` más alta del repo
+y publica la siguiente. En la primera release (sin etiquetas aún) usa
+`MARKETING_VERSION` de `project.yml`, salvo que le pases una explícita.
+
+Hace, en orden: commit de todo lo que haya sin commitear con ese mensaje →
+`git pull --rebase` (por si hay algo nuevo en GitHub) → `./clean.sh` → fija `MARKETING_VERSION` (y el nº de build =
+nº de commits) en `project.yml` → `make-dmg.sh` y `build-ipa.sh` (que
+actualiza `apps.json`) → commit + push de `project.yml` y `apps.json` →
+release `vX.Y.Z` en GitHub con `AIclient-X.Y.Z.dmg` y `AIclient-X.Y.Z.ipa` →
+actualiza la cask del tap de Homebrew (versión + sha256 del `.dmg`) → instala
+o actualiza AIclient en este Mac con `brew`.
+
+- Necesita `gh auth login` y que el repo de la app sea **público**.
+- Si hay cambios sin commitear y no le pasas mensaje, se para antes de
+  compilar nada (la etiqueta tiene que apuntar al código que lleva el
+  `.dmg`/`.ipa`). Sin cambios pendientes, el mensaje se puede omitir.
+- El tap es `rbc33/homebrew-aiclient` (`AICLIENT_TAP` para cambiarlo). Si no
+  existe en GitHub, el script lo crea junto con `Casks/aiclient.rb`. Usa tu
+  copia local en `../homebrew-aiclient` si la hay; si no, lo clona en una
+  carpeta temporal.
+- `AICLIENT_NO_INSTALL=1` para no tocar la app instalada en este Mac.
+
+Una vez publicada:
+
+```bash
+brew install --cask rbc33/aiclient/aiclient   # instalar
+brew upgrade --cask aiclient                  # actualizar
+```
+
+La app va firmada ad-hoc y sin notarizar, así que la cask le quita la
+cuarentena al instalarla para que Gatekeeper no la bloquee.
+
+`./clean.sh` borra `build/` y `dist/` (lo llama `release.sh` al empezar).
 
 ## Búsqueda web (opcional): instalar SearXNG
 

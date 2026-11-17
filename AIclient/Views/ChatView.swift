@@ -1,7 +1,9 @@
 import SwiftUI
 import UniformTypeIdentifiers
-import AppKit
 import AVFoundation
+#if os(iOS)
+import PhotosUI
+#endif
 
 struct ChatView: View {
     @State private var viewModel: ChatViewModel
@@ -25,6 +27,12 @@ struct ChatView: View {
     /// submenus.
     @State private var modelsByProvider: [UUID: [String]] = [:]
     @State private var loadingProviderIDs: Set<UUID> = []
+
+    #if os(iOS)
+    /// iOS "Fotos" opens the system photo library (PhotosPicker) rather than
+    /// the Files browser `.fileImporter` would show.
+    @State private var photoSelection: [PhotosPickerItem] = []
+    #endif
 
     @State private var audioRecorder: AVAudioRecorder?
     @State private var recordingURL: URL?
@@ -79,6 +87,18 @@ struct ChatView: View {
             inputBar
         }
         .navigationTitle(viewModel.conversation.title)
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        .photosPicker(
+            isPresented: $showingImageImporter,
+            selection: $photoSelection,
+            maxSelectionCount: 5,
+            matching: .images
+        )
+        .onChange(of: photoSelection) {
+            loadSelectedPhotos()
+        }
+        #else
         .fileImporter(
             isPresented: $showingImageImporter,
             allowedContentTypes: [.image],
@@ -86,6 +106,7 @@ struct ChatView: View {
         ) { result in
             handleImportResult(result, forcedKind: .image)
         }
+        #endif
         .fileImporter(
             isPresented: $showingFileImporter,
             allowedContentTypes: [.pdf, .plainText, .rtf, .audio, .data],
@@ -115,6 +136,7 @@ struct ChatView: View {
                 }
                 .padding()
             }
+            .scrollDismissesKeyboard(.interactively)
             .onChange(of: viewModel.conversation.messages.last?.content) {
                 guard let lastID = viewModel.conversation.messages.last?.id else { return }
                 withAnimation(.easeOut(duration: 0.15)) {
@@ -191,7 +213,7 @@ struct ChatView: View {
                 .padding(.vertical, 4)
                 .background(.quaternary, in: Capsule())
             }
-            .menuStyle(.borderlessButton)
+            .compactMenuStyle()
             .fixedSize()
             .disabled(providerStore.providers.isEmpty)
 
@@ -246,16 +268,27 @@ struct ChatView: View {
                 } label: {
                     Label("Archivos", systemImage: "doc")
                 }
+                #if os(iOS)
+                // On iPhone the composer row is too narrow for a separate
+                // paste button; text can also be pasted natively into the
+                // field (long-press > Pegar), so here it lives in this menu.
+                Button {
+                    pasteFromClipboard()
+                } label: {
+                    Label("Pegar", systemImage: "doc.on.clipboard")
+                }
+                #endif
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .medium))
                     .frame(width: 24, height: 24)
             }
-            .menuStyle(.borderlessButton)
+            .compactMenuStyle()
             .fixedSize()
             .disabled(viewModel.provider == nil)
             .help("Adjuntar")
 
+            #if os(macOS)
             Button {
                 pasteFromClipboard()
             } label: {
@@ -265,6 +298,7 @@ struct ChatView: View {
             .buttonStyle(.plain)
             .disabled(viewModel.provider == nil)
             .help("Pegar (texto o imagen del portapapeles)")
+            #endif
 
             Button {
                 if webSearchStore.config == nil {
@@ -393,15 +427,11 @@ struct ChatView: View {
     }
 
     /// Prefers an image on the clipboard (e.g. a screenshot) — a plain
-    /// `TextField` can't receive pasted images via ⌘V, so this is the only
-    /// way to attach one without going through the file picker. Falls back
-    /// to pasting text into the draft.
+    /// `TextField` can't receive pasted images, so this is the only way to
+    /// attach one without going through a picker. Falls back to pasting text
+    /// into the draft.
     private func pasteFromClipboard() {
-        let pasteboard = NSPasteboard.general
-
-        if let images = pasteboard.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage],
-           let image = images.first,
-           let data = pngData(from: image) {
+        if let data = PlatformClipboard.imagePNGData() {
             guard data.count <= Self.maxAttachmentBytes else {
                 attachmentError = "La imagen pegada pesa más de \(Self.maxAttachmentMB) MB."
                 return
@@ -412,7 +442,7 @@ struct ChatView: View {
             return
         }
 
-        if let text = pasteboard.string(forType: .string), !text.isEmpty {
+        if let text = PlatformClipboard.string(), !text.isEmpty {
             viewModel.draftText = viewModel.draftText.isEmpty ? text : viewModel.draftText + "\n" + text
             attachmentError = nil
             return
@@ -421,11 +451,34 @@ struct ChatView: View {
         attachmentError = "El portapapeles no tiene texto ni imagen para pegar."
     }
 
-    private func pngData(from image: NSImage) -> Data? {
-        guard let tiffData = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData) else { return nil }
-        return bitmap.representation(using: .png, properties: [:])
+    #if os(iOS)
+    /// Loads what the user picked in the iOS photo library and attaches it
+    /// as a downscaled JPEG (library photos are often huge HEICs that some
+    /// vision backends can't decode).
+    private func loadSelectedPhotos() {
+        let items = photoSelection
+        guard !items.isEmpty else { return }
+        photoSelection = []
+
+        Task { @MainActor in
+            for item in items {
+                guard let data = try? await item.loadTransferable(type: Data.self),
+                      let image = UIImage(data: data),
+                      let jpeg = image.jpegDataForUpload() else {
+                    attachmentError = "No se pudo cargar una de las fotos."
+                    continue
+                }
+                guard jpeg.count <= Self.maxAttachmentBytes else {
+                    attachmentError = "Una de las fotos pesa más de \(Self.maxAttachmentMB) MB — no se adjuntó."
+                    continue
+                }
+                let fileName = "Foto \(pendingAttachments.count + 1).jpg"
+                pendingAttachments.append(Attachment(kind: .image, fileName: fileName, mimeType: "image/jpeg", data: jpeg))
+                attachmentError = nil
+            }
+        }
     }
+    #endif
 
     // MARK: - Audio recording
 
@@ -433,11 +486,49 @@ struct ChatView: View {
         if isRecording {
             stopRecording()
         } else {
-            startRecording()
+            requestMicrophoneThenRecord()
         }
     }
 
+    /// iOS needs the microphone permission explicitly granted before
+    /// recording (and shows the system prompt the first time). On macOS the
+    /// prompt is triggered by the recorder itself.
+    private func requestMicrophoneThenRecord() {
+        #if os(iOS)
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted:
+            startRecording()
+        case .denied:
+            attachmentError = "Sin permiso de micrófono — actívalo en Ajustes > AIclient."
+        case .undetermined:
+            Task { @MainActor in
+                if await AVAudioApplication.requestRecordPermission() {
+                    startRecording()
+                } else {
+                    attachmentError = "Sin permiso de micrófono — actívalo en Ajustes > AIclient."
+                }
+            }
+        @unknown default:
+            startRecording()
+        }
+        #else
+        startRecording()
+        #endif
+    }
+
     private func startRecording() {
+        #if os(iOS)
+        // iOS's default audio session category can't record at all.
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+            try session.setActive(true)
+        } catch {
+            attachmentError = "No se pudo activar el micrófono: \(error.localizedDescription)"
+            return
+        }
+        #endif
+
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
             AVSampleRateKey: 44_100,
@@ -464,6 +555,9 @@ struct ChatView: View {
         audioRecorder?.stop()
         audioRecorder = nil
         isRecording = false
+        #if os(iOS)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
 
         guard let url = recordingURL else { return }
         recordingURL = nil

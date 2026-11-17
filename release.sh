@@ -3,19 +3,33 @@ set -euo pipefail
 
 # -----------------------------------------------------------------------------
 # release.sh — publica una versión de AIclient (Mac + iOS):
+#   ·  hace commit de tus cambios con el mensaje que le pases, se trae lo que
+#      haya nuevo en GitHub (git pull --rebase)
 #   0. limpia builds anteriores (clean.sh)
 #   1. fija la versión en project.yml (MARKETING_VERSION y nº de build)
 #   2. genera el .dmg (make-dmg.sh) y el .ipa sin firmar (build-ipa.sh, que
 #      también actualiza apps.json, la fuente de SideStore)
-#   3. hace commit + push de project.yml y apps.json
+#   3. hace commit de project.yml y apps.json y push de todo
 #   4. crea la release vX.Y.Z en GitHub con el .dmg y el .ipa
 #   5. crea/actualiza la cask del tap de Homebrew (versión + sha256) y la sube
 #   6. instala/actualiza AIclient en este Mac con Homebrew
 #
 # Uso:
-#   ./release.sh 1.0.1
-#   ./release.sh 1.0.0 --replace   # rehace una versión ya publicada (borra
-#                                  # su release y su etiqueta y la vuelve a crear)
+#   ./release.sh "Mensaje del commit"              # siguiente versión de parche (1.0.0 -> 1.0.1)
+#   ./release.sh "Mensaje del commit" --minor      # 1.0.3 -> 1.1.0
+#   ./release.sh "Mensaje del commit" --major      # 1.4.2 -> 2.0.0
+#   ./release.sh 0.1.0 "Mensaje del commit"        # versión explícita
+#   ./release.sh "Mensaje del commit" --replace    # rehace la ÚLTIMA versión publicada
+#                                                  # (borra su release y su etiqueta)
+#   ./release.sh                                   # si no hay cambios sin commitear
+#
+# La versión la lleva el script: mira la etiqueta vX.Y.Z más alta del repo y
+# publica la siguiente. Si todavía no hay ninguna, usa MARKETING_VERSION de
+# project.yml (o la que le pases explícitamente).
+#
+# El mensaje es para el commit de tus cambios (todo lo que haya sin commitear,
+# p. ej. lo que acaba de copiar ./update-client.sh). Si hay cambios y no pasas
+# mensaje, el script se para antes de compilar nada.
 #
 # Variables opcionales:
 #   AICLIENT_REPO=usuario/repo          repo de la app      (def. rbc33/AIclient-macOS)
@@ -23,7 +37,6 @@ set -euo pipefail
 #   AICLIENT_TAP_DIR=ruta               copia local del tap (def. ../homebrew-aiclient;
 #                                       si no existe, se clona en una carpeta temporal)
 #   AICLIENT_NO_INSTALL=1               no instalar/actualizar con brew en este Mac
-#   AICLIENT_ALLOW_DIRTY=1              publicar aunque haya cambios sin commitear
 #
 # Requisitos: Xcode, XcodeGen, create-dmg (brew install xcodegen create-dmg)
 # y GitHub CLI con sesión iniciada (brew install gh && gh auth login).
@@ -34,20 +47,28 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-VERSION="${1:-}"
-REPLACE="${2:-}"
-if [[ -z "$VERSION" ]]; then
-  echo "Uso: ./release.sh <versión> [--replace]   (p. ej. ./release.sh 1.0.1)" >&2
-  exit 1
-fi
-if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "error: la versión tiene que ser X.Y.Z (p. ej. 1.0.1), no '$VERSION'." >&2
-  exit 1
-fi
-if [[ -n "$REPLACE" && "$REPLACE" != "--replace" ]]; then
-  echo "error: segundo argumento desconocido '$REPLACE' (solo se admite --replace)." >&2
-  exit 1
-fi
+VERSION=""
+MESSAGE=""
+REPLACE=""
+BUMP="patch"
+for arg in "$@"; do
+  case "$arg" in
+    --replace) REPLACE="--replace" ;;
+    --minor)   BUMP="minor" ;;
+    --major)   BUMP="major" ;;
+    --*)       echo "error: opción desconocida '$arg' (--replace, --minor, --major)." >&2; exit 1 ;;
+    *)
+      if [[ -z "$VERSION" && "$arg" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        VERSION="$arg"
+      elif [[ -z "$MESSAGE" ]]; then
+        MESSAGE="$arg"
+      else
+        echo "error: argumento de más: '$arg'. Pon el mensaje del commit entre comillas." >&2
+        exit 1
+      fi
+      ;;
+  esac
+done
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "error: este script solo puede correr en macOS." >&2
   exit 1
@@ -57,36 +78,79 @@ for tool in gh git xcodegen xcodebuild create-dmg shasum; do
 done
 gh auth status >/dev/null 2>&1 || { echo "error: GitHub CLI sin sesión. Ejecuta: gh auth login" >&2; exit 1; }
 
+# Un rebase a medias (p. ej. un `git pull --rebase` anterior que chocó con lo
+# que había en GitHub) deja el repo sin rama: no se puede publicar así.
+GIT_DIR_PATH="$(git rev-parse --git-dir)"
+if [[ -d "$GIT_DIR_PATH/rebase-merge" || -d "$GIT_DIR_PATH/rebase-apply" ]]; then
+  echo "error: hay un rebase a medias. Resuélvelo antes de publicar:" >&2
+  echo "       git status            # para ver los archivos en conflicto" >&2
+  echo "       git rebase --abort    # o para deshacerlo y volver a como estabas" >&2
+  exit 1
+fi
+
 REPO="${AICLIENT_REPO:-rbc33/AIclient-macOS}"
 TAP="${AICLIENT_TAP:-rbc33/homebrew-aiclient}"
 TAP_DIR="${AICLIENT_TAP_DIR:-../homebrew-aiclient}"
 TAP_OWNER="${TAP%%/*}"
 TAP_SHORT="${TAP#*/homebrew-}"           # rbc33/homebrew-aiclient -> aiclient
 BREW_CASK="$TAP_OWNER/$TAP_SHORT/aiclient" # nombre completo para brew install
-TAG="v$VERSION"
 
-DMG="dist/AIclient-$VERSION.dmg"
-IPA_NAME="AIclient-$VERSION.ipa"
-IPA="dist/$IPA_NAME"
-
-# La etiqueta vX.Y.Z apunta al commit que se sube en el paso 3: si hay cambios
-# sin commitear, el .dmg/.ipa llevarían código que no está en ese commit.
-DIRTY="$(git status --porcelain --untracked-files=no | grep -v -E ' (project\.yml|apps\.json)$' || true)"
-if [[ -n "$DIRTY" && -z "${AICLIENT_ALLOW_DIRTY:-}" ]]; then
-  echo "error: hay cambios sin commitear (haz commit primero, o AICLIENT_ALLOW_DIRTY=1):" >&2
-  echo "$DIRTY" >&2
-  exit 1
+# Commit de tus cambios. La etiqueta vX.Y.Z tiene que apuntar al código que
+# llevan el .dmg y el .ipa, así que no se compila nada con cambios sueltos.
+if [[ -n "$(git status --porcelain)" ]]; then
+  if [[ -z "$MESSAGE" ]]; then
+    echo "error: hay cambios sin commitear. Pasa el mensaje del commit:" >&2
+    echo "       ./release.sh \"mensaje\"" >&2
+    git status --short >&2
+    exit 1
+  fi
+  git add -A
+  git commit -q -m "$MESSAGE"
+  echo "==> Commit: ${MESSAGE%%$'\n'*}"
+elif [[ -n "$MESSAGE" ]]; then
+  echo "==> No hay cambios sin commitear: se ignora el mensaje"
 fi
 
 # Traer lo que haya en GitHub y no esté aquí (p. ej. un cambio hecho desde la
-# web u otro Mac). Si no, el push del paso 3 se rechaza ("non-fast-forward")
-# después de haber compilado todo.
+# web u otro Mac), y las etiquetas de versión. Si no, el push del paso 3 se
+# rechaza ("non-fast-forward") después de haber compilado todo.
 echo "==> Sincronizando con origin/main"
-git pull -q --rebase --autostash origin main
+if ! git pull -q --rebase origin main; then
+  echo >&2
+  echo "error: lo que hay en GitHub choca con tus commits locales (conflicto)." >&2
+  echo "       Mira los archivos con 'git status', o deshaz el intento con" >&2
+  echo "       'git rebase --abort' (tus commits siguen ahí)." >&2
+  exit 1
+fi
+git fetch -q --tags origin
 
-# Comprobar ANTES de compilar nada si la release ya existe.
+# --- versión: la siguiente a la última etiqueta vX.Y.Z --------------------------
+LAST_TAG="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)"
+LAST_VERSION="${LAST_TAG#v}"
+if [[ -z "$VERSION" ]]; then
+  if [[ -z "$LAST_VERSION" ]]; then
+    # Primera release: la versión que ya haya en project.yml.
+    VERSION="$(sed -n -E 's/^ *MARKETING_VERSION: "([0-9]+\.[0-9]+\.[0-9]+)".*/\1/p' project.yml | head -n 1)"
+    [[ -n "$VERSION" ]] || VERSION="1.0.0"
+  elif [[ -n "$REPLACE" ]]; then
+    VERSION="$LAST_VERSION"
+  else
+    IFS=. read -r MAJOR MINOR PATCH <<< "$LAST_VERSION"
+    case "$BUMP" in
+      major) VERSION="$((MAJOR + 1)).0.0" ;;
+      minor) VERSION="$MAJOR.$((MINOR + 1)).0" ;;
+      *)     VERSION="$MAJOR.$MINOR.$((PATCH + 1))" ;;
+    esac
+  fi
+fi
+TAG="v$VERSION"
+DMG="dist/AIclient-$VERSION.dmg"
+IPA_NAME="AIclient-$VERSION.ipa"
+IPA="dist/$IPA_NAME"
+echo "==> Versión a publicar: $VERSION${LAST_VERSION:+ (la anterior era $LAST_VERSION)}"
+
 if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1 && [[ "$REPLACE" != "--replace" ]]; then
-  echo "error: la release $TAG ya existe. Usa ./release.sh $VERSION --replace para rehacerla." >&2
+  echo "error: la release $TAG ya existe. Usa --replace para rehacerla." >&2
   exit 1
 fi
 
