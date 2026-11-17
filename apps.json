@@ -1,0 +1,49 @@
+{
+  "name": "AIclient",
+  "identifier": "com.ricardobenthem.aiclient.source",
+  "sourceURL": "https://raw.githubusercontent.com/rbc33/AIclient-macOS/main/apps.json",
+  "apps": [
+    {
+      "name": "AIclient",
+      "bundleIdentifier": "com.ricardobenthem.aiclient",
+      "developerName": "rbc33",
+      "subtitle": "Chat con tus propios modelos de IA vía Tailscale.",
+      "localizedDescription": "Cliente de chat para tus propios servidores de modelos compatibles con la API de OpenAI (Ollama, llama.cpp/llama-swap, vLLM, NVIDIA NIM), alcanzables por Tailscale.\n\n• Varios proveedores y selector de proveedor + modelo en el propio chat\n• Respuestas en streaming con indicador de tokens/segundo\n• Fotos y archivos adjuntos (las imágenes se envían a modelos con visión)\n• Notas de audio grabadas desde el micrófono\n• Búsqueda web opcional con tu propia instancia de SearXNG\n• Claves API guardadas en el Llavero",
+      "iconURL": "https://raw.githubusercontent.com/rbc33/AIclient-macOS/main/AIclient/Resources/Assets.xcassets/AppIcon.appiconset/icon_ios_1024.png",
+      "tintColor": "#7b2fff",
+      "category": "utilities",
+      "screenshotURLs": [],
+      "permissions": [
+        {
+          "type": "network",
+          "usageDescription": "Se conecta a tus servidores de modelos y a SearXNG en tu red local o tu tailnet."
+        },
+        {
+          "type": "microphone",
+          "usageDescription": "Graba notas de audio que adjuntas a tus mensajes."
+        },
+        {
+          "type": "photos",
+          "usageDescription": "Adjunta fotos de tu fototeca a los mensajes (selector del sistema, sin acceso a toda la fototeca)."
+        }
+      ],
+      "versions": [
+        {
+          "version": "1.0.0",
+          "buildVersion": "8",
+          "date": "2026-11-17",
+          "localizedDescription": "Add iOS target, SideStore source, release.sh and clean.sh",
+          "downloadURL": "https://github.com/rbc33/AIclient-macOS/releases/download/v1.0.0/AIclient-1.0.0.ipa",
+          "size": 578662,
+          "minOSVersion": "17.0"
+        }
+      ],
+      "version": "1.0.0",
+      "versionDate": "2026-11-17",
+      "versionDescription": "Add iOS target, SideStore source, release.sh and clean.sh",
+      "downloadURL": "https://github.com/rbc33/AIclient-macOS/releases/download/v1.0.0/AIclient-1.0.0.ipa",
+      "size": 578662
+    }
+  ],
+  "news": []
+}

@@ -15,7 +15,7 @@ settings:
     # and build-ipa.sh copies it into apps.json — bump it here for every
     # release you want SideStore to offer as an update.
     MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "8"
     # Rellena con tu Team ID (Xcode > Settings > Accounts, o
     # `security find-identity -v -p codesigning`) o hazlo desde Xcode
     # tras generar el proyecto: target > Signing & Capabilities.
