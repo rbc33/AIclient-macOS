@@ -35,6 +35,7 @@ struct WebSearchSettingsView: View {
             Form {
                 Section("Instancia de SearXNG") {
                     TextField("Base URL", text: $baseURLString, prompt: Text("http://searxng.tailnet.ts.net:8080"))
+                        .urlInputField()
                         .onChange(of: baseURLString) { testState = .idle }
                     Stepper("Resultados por búsqueda: \(maxResults)", value: $maxResults, in: 1...10)
 
@@ -74,7 +75,7 @@ struct WebSearchSettingsView: View {
                 }
             }
         }
-        .frame(minWidth: 460, minHeight: 420)
+        .macOSMinFrame(width: 460, height: 420)
         .onDisappear { testTask?.cancel() }
     }
 

@@ -58,7 +58,7 @@ struct ProviderListView: View {
                 }
             }
         }
-        .frame(minWidth: 480, minHeight: 360)
+        .macOSMinFrame(width: 480, height: 360)
         .sheet(isPresented: $isPresentingNew) {
             ProviderEditView(store: store, provider: nil)
         }

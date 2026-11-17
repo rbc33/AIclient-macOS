@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
+<!--
+  macOS Info.plist. Hand-written and referenced via INFOPLIST_FILE in
+  project.yml (NOT via XcodeGen's `info:` key, which regenerates the file on
+  every `xcodegen generate` and silently drops any key added by hand — that's
+  how NSMicrophoneUsageDescription went missing before).
+-->
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
@@ -15,8 +21,19 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>AIclient usa el micrófono para grabar notas de audio que adjuntas a tus mensajes.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Providers and SearXNG are reached over plain HTTP inside the tailnet
+		     (e.g. http://server.tailnet-1234.ts.net:11434) — ATS would block those. -->
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 </dict>
 </plist>
