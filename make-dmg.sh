@@ -22,7 +22,6 @@ set -euo pipefail
 #   ./make-dmg.sh                              # build + firma ad-hoc + dmg
 #   AICLIENT_TEAM_ID=ABCDE12345 ./make-dmg.sh  # firma "Automatic" con tu Team ID
 #   AICLIENT_SKIP_CLEAN=1 ./make-dmg.sh        # build incremental (sin "clean")
-#   AICLIENT_NO_OPEN=1 ./make-dmg.sh           # no abrir dist/ en el Finder al acabar
 #
 # Nota sobre firma y Gatekeeper: sin AICLIENT_TEAM_ID, el build queda firmado
 # ad-hoc — perfecto para instalarlo en ESTE Mac, pero si le pasas el .dmg a
@@ -178,7 +177,4 @@ if [[ -f "$ICNS_PATH" && -n "$FILEICON_BIN" ]]; then
 fi
 
 echo "==> Listo: $DMG_PATH"
-# release.sh pone AICLIENT_NO_OPEN=1 para no abrir el Finder a mitad de publicación.
-if [[ "${AICLIENT_NO_OPEN:-0}" != "1" ]]; then
-  open "$DIST_DIR"
-fi
+open "$DIST_DIR"

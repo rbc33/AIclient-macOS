@@ -34,7 +34,7 @@ struct MarkdownContentView: View {
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color.codeBlockBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+        .background(Color(nsColor: .textBackgroundColor).opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.secondary.opacity(0.2)))
     }
 

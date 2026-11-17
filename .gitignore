@@ -23,4 +23,3 @@ build/
 
 # Swift Package Manager (si se añade en el futuro)
 .swiftpm/
-log.log

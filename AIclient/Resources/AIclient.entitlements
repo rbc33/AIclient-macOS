@@ -1,13 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<!--
-  macOS entitlements, referenced via CODE_SIGN_ENTITLEMENTS in project.yml.
-  The app runs with the Hardened Runtime, which blocks microphone access
-  unless this entitlement is present (on top of NSMicrophoneUsageDescription).
--->
-<dict>
-	<key>com.apple.security.device.audio-input</key>
-	<true/>
-</dict>
+<dict/>
 </plist>

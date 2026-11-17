@@ -56,7 +56,6 @@ struct ProviderEditView: View {
 
                 Section("Conexión") {
                     TextField("Base URL", text: $baseURLString, prompt: Text("http://mi-server.tailnet.ts.net:11434"))
-                        .urlInputField()
                         .onChange(of: baseURLString) { connectionTestState = .idle }
 
                     connectionTestRow
@@ -93,7 +92,7 @@ struct ProviderEditView: View {
                 }
             }
         }
-        .macOSMinFrame(width: 460, height: 480)
+        .frame(minWidth: 460, minHeight: 480)
         .onDisappear { testTask?.cancel() }
     }
 

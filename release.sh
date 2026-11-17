@@ -78,6 +78,12 @@ if [[ -n "$DIRTY" && -z "${AICLIENT_ALLOW_DIRTY:-}" ]]; then
   exit 1
 fi
 
+# Traer lo que haya en GitHub y no esté aquí (p. ej. un cambio hecho desde la
+# web u otro Mac). Si no, el push del paso 3 se rechaza ("non-fast-forward")
+# después de haber compilado todo.
+echo "==> Sincronizando con origin/main"
+git pull -q --rebase --autostash origin main
+
 # Comprobar ANTES de compilar nada si la release ya existe.
 if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1 && [[ "$REPLACE" != "--replace" ]]; then
   echo "error: la release $TAG ya existe. Usa ./release.sh $VERSION --replace para rehacerla." >&2

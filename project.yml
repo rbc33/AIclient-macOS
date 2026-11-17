@@ -4,18 +4,14 @@ options:
   bundleIdPrefix: com.ricardobenthem
   deploymentTarget:
     macOS: "14.0"
-    iOS: "17.0"
   createIntermediateGroups: true
   generateEmptyDirectories: true
 
 settings:
   base:
     SWIFT_VERSION: "5.10"
-    # MARKETING_VERSION feeds CFBundleShortVersionString in both Info.plists,
-    # and build-ipa.sh copies it into apps.json — bump it here for every
-    # release you want SideStore to offer as an update.
     MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: "8"
+    CURRENT_PROJECT_VERSION: "1"
     # Rellena con tu Team ID (Xcode > Settings > Accounts, o
     # `security find-identity -v -p codesigning`) o hazlo desde Xcode
     # tras generar el proyecto: target > Signing & Capabilities.
@@ -23,12 +19,6 @@ settings:
     CODE_SIGN_STYLE: Automatic
     SWIFT_STRICT_CONCURRENCY: minimal
 
-# Both targets compile the very same AIclient/ sources; platform differences
-# live behind `#if os(macOS)` / `#if os(iOS)` (mostly in
-# Views/PlatformCompat.swift). Info.plists and entitlements are hand-written
-# files wired in via INFOPLIST_FILE / CODE_SIGN_ENTITLEMENTS — deliberately
-# not XcodeGen's `info:`/`entitlements:` keys, which regenerate those files
-# on every `xcodegen generate` and wipe anything added by hand.
 targets:
   AIclient:
     type: application
@@ -37,58 +27,29 @@ targets:
     sources:
       - path: AIclient
         excludes:
-          # Wired in via build settings below — must NOT also be picked up by
-          # the source glob, or Xcode fails with "Multiple commands produce
-          # Info.plist".
+          # Referenced directly via `info.path` / `entitlements.path` below —
+          # must NOT also be picked up by the source glob, or Xcode fails
+          # with "Multiple commands produce Info.plist".
           - "Resources/Info.plist"
-          - "Resources/Info-iOS.plist"
           - "Resources/AIclient.entitlements"
+    info:
+      path: AIclient/Resources/Info.plist
+    entitlements:
+      path: AIclient/Resources/AIclient.entitlements
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ricardobenthem.aiclient
         PRODUCT_NAME: AIclient
-        INFOPLIST_FILE: AIclient/Resources/Info.plist
-        CODE_SIGN_ENTITLEMENTS: AIclient/Resources/AIclient.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         COMBINE_HIDPI_IMAGES: true
         ENABLE_HARDENED_RUNTIME: true
         MACOSX_DEPLOYMENT_TARGET: "14.0"
-
-  AIclient-iOS:
-    type: application
-    platform: iOS
-    deploymentTarget: "17.0"
-    sources:
-      - path: AIclient
-        excludes:
-          - "Resources/Info.plist"
-          - "Resources/Info-iOS.plist"
-          - "Resources/AIclient.entitlements"
-    settings:
-      base:
-        # Same bundle ID as the Mac app. SideStore re-signs the IPA with your
-        # own Apple ID, and apps.json's "bundleIdentifier" must match this.
-        PRODUCT_BUNDLE_IDENTIFIER: com.ricardobenthem.aiclient
-        PRODUCT_NAME: AIclient
-        INFOPLIST_FILE: AIclient/Resources/Info-iOS.plist
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        # 1 = iPhone, 2 = iPad (universal app).
-        TARGETED_DEVICE_FAMILY: "1,2"
-        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
 
 schemes:
   AIclient:
     build:
       targets:
         AIclient: all
-    run:
-      config: Debug
-    archive:
-      config: Release
-  AIclient-iOS:
-    build:
-      targets:
-        AIclient-iOS: all
     run:
       config: Debug
     archive:

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct MessageBubbleView: View {
     let message: ChatMessage
@@ -10,17 +11,6 @@ struct MessageBubbleView: View {
     @State private var isHovering = false
 
     private var isUser: Bool { message.role == .user }
-
-    /// The copy/regenerate/tok-s footer only appears on hover on macOS. iOS
-    /// has no hover (on iPhone, never), so there it's always shown — otherwise
-    /// copy and regenerate would be unreachable.
-    private var showsFooter: Bool {
-        #if os(macOS)
-        return isHovering
-        #else
-        return true
-        #endif
-    }
 
     var body: some View {
         HStack {
@@ -86,8 +76,8 @@ struct MessageBubbleView: View {
             .font(.caption2)
             // Only visible on hover, but still laid out (opacity, not
             // conditional content) so the bubble doesn't jump in height.
-            .opacity(showsFooter ? 1 : 0)
-            .allowsHitTesting(showsFooter)
+            .opacity(isHovering ? 1 : 0)
+            .allowsHitTesting(isHovering)
             .animation(.easeInOut(duration: 0.12), value: isHovering)
         }
     }
@@ -115,7 +105,9 @@ struct MessageBubbleView: View {
     }
 
     private func copyToClipboard() {
-        PlatformClipboard.copy(message.content)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(message.content, forType: .string)
 
         didCopy = true
         Task {
@@ -132,8 +124,8 @@ struct MessageBubbleView: View {
             if !images.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(images) { attachment in
-                        if let image = PlatformImage(data: attachment.data) {
-                            Image(platformImage: image)
+                        if let nsImage = NSImage(data: attachment.data) {
+                            Image(nsImage: nsImage)
                                 .resizable()
                                 .scaledToFill()
                                 .frame(width: 96, height: 96)
