@@ -269,6 +269,44 @@ en cada `xcodegen generate`** y borraban lo añadido a mano. Ambos plists
 permiten HTTP plano (`NSAllowsArbitraryLoads`) para hablar con los
 servidores de tu tailnet por `http://…ts.net`.
 
+## Publicar una versión: `release.sh`
+
+Todo de una vez, para Mac e iOS:
+
+```bash
+./release.sh 1.0.1
+./release.sh 1.0.0 --replace   # rehacer una versión ya publicada
+```
+
+Hace, en orden: `./clean.sh` → fija `MARKETING_VERSION` (y el nº de build =
+nº de commits) en `project.yml` → `make-dmg.sh` y `build-ipa.sh` (que
+actualiza `apps.json`) → commit + push de `project.yml` y `apps.json` →
+release `vX.Y.Z` en GitHub con `AIclient-X.Y.Z.dmg` y `AIclient-X.Y.Z.ipa` →
+actualiza la cask del tap de Homebrew (versión + sha256 del `.dmg`) → instala
+o actualiza AIclient en este Mac con `brew`.
+
+- Necesita `gh auth login` y que el repo de la app sea **público**.
+- Se niega a publicar si tienes cambios sin commitear (la etiqueta tiene que
+  apuntar al código que lleva el `.dmg`/`.ipa`); `AICLIENT_ALLOW_DIRTY=1`
+  para saltarte la comprobación.
+- El tap es `rbc33/homebrew-aiclient` (`AICLIENT_TAP` para cambiarlo). Si no
+  existe en GitHub, el script lo crea junto con `Casks/aiclient.rb`. Usa tu
+  copia local en `../homebrew-aiclient` si la hay; si no, lo clona en una
+  carpeta temporal.
+- `AICLIENT_NO_INSTALL=1` para no tocar la app instalada en este Mac.
+
+Una vez publicada:
+
+```bash
+brew install --cask rbc33/aiclient/aiclient   # instalar
+brew upgrade --cask aiclient                  # actualizar
+```
+
+La app va firmada ad-hoc y sin notarizar, así que la cask le quita la
+cuarentena al instalarla para que Gatekeeper no la bloquee.
+
+`./clean.sh` borra `build/` y `dist/` (lo llama `release.sh` al empezar).
+
 ## Búsqueda web (opcional): instalar SearXNG
 
 La app puede buscar en la web antes de responder (botón de globo en el chat),

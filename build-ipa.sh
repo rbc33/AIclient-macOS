@@ -17,6 +17,7 @@ set -euo pipefail
 #   AICLIENT_RELEASE_NOTES="..."       # por defecto, el último mensaje de commit
 #   AICLIENT_DEVELOPER_NAME="..."      # por defecto, el usuario de GitHub
 #   AICLIENT_SKIP_CLEAN=1              # build incremental (sin "clean")
+#   AICLIENT_IPA_NAME=AIclient-1.0.0.ipa  # nombre del .ipa (y del asset en la release)
 #
 # Dónde vive cada cosa (el repo de GitHub tiene que ser PÚBLICO, SideStore
 # descarga sin credenciales):
@@ -38,7 +39,8 @@ CONFIGURATION="Release"
 DERIVED_DATA_PATH="$SCRIPT_DIR/build/DerivedData-iOS"
 APP_NAME="AIclient.app"
 DIST_DIR="$SCRIPT_DIR/dist"
-IPA_NAME="AIclient.ipa"
+# release.sh lo versiona (AIclient-X.Y.Z.ipa); el nombre también va en la URL de apps.json.
+IPA_NAME="${AICLIENT_IPA_NAME:-AIclient.ipa}"
 IPA_PATH="$DIST_DIR/$IPA_NAME"
 SOURCE_JSON="$SCRIPT_DIR/apps.json"
 ICON_REPO_PATH="AIclient/Resources/Assets.xcassets/AppIcon.appiconset/icon_ios_1024.png"
