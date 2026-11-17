@@ -2,34 +2,31 @@
 set -euo pipefail
 
 # -----------------------------------------------------------------------------
-# release.sh — publica una versión de AIclient (Mac + iOS):
-#   ·  hace commit de tus cambios con el mensaje que le pases, se trae lo que
-#      haya nuevo en GitHub (git pull --rebase)
-#   0. limpia builds anteriores (clean.sh)
-#   1. fija la versión en project.yml (MARKETING_VERSION y nº de build)
+# release.sh — publica una versión de AIclient (Mac + iOS). NO hace commit de
+# tus cambios: eso va antes, con tu propio `git commit` + `git push`.
+#
+#   0. comprueba que no hay nada sin commitear y que estás igual que GitHub
+#   1. elige la versión (la siguiente a la última etiqueta vX.Y.Z) y la fija
+#      en project.yml junto al nº de build
 #   2. genera el .dmg (make-dmg.sh) y el .ipa sin firmar (build-ipa.sh, que
 #      también actualiza apps.json, la fuente de SideStore)
-#   3. hace commit de project.yml y apps.json y push de todo
+#   3. sube project.yml y apps.json con un commit "Release AIclient X.Y.Z"
+#      (SideStore lee apps.json de GitHub: sin esto no vería la versión nueva)
 #   4. crea la release vX.Y.Z en GitHub con el .dmg y el .ipa
-#   5. crea/actualiza la cask del tap de Homebrew (versión + sha256) y la sube
+#   5. crea/actualiza el tap de Homebrew rbc33/homebrew-aiclient y su cask
+#      (versión + sha256). La primera vez crea el repo del tap en GitHub.
 #   6. instala/actualiza AIclient en este Mac con Homebrew
 #
 # Uso:
-#   ./release.sh "Mensaje del commit"              # siguiente versión de parche (1.0.0 -> 1.0.1)
-#   ./release.sh "Mensaje del commit" --minor      # 1.0.3 -> 1.1.0
-#   ./release.sh "Mensaje del commit" --major      # 1.4.2 -> 2.0.0
-#   ./release.sh 0.1.0 "Mensaje del commit"        # versión explícita
-#   ./release.sh "Mensaje del commit" --replace    # rehace la ÚLTIMA versión publicada
-#                                                  # (borra su release y su etiqueta)
-#   ./release.sh                                   # si no hay cambios sin commitear
+#   ./release.sh              # siguiente parche: 1.0.3 -> 1.0.4
+#   ./release.sh --minor      # 1.0.3 -> 1.1.0
+#   ./release.sh --major      # 1.4.2 -> 2.0.0
+#   ./release.sh 0.1.0        # versión explícita
+#   ./release.sh --replace    # rehace la ÚLTIMA versión publicada
+#                             # (borra su release y su etiqueta)
 #
-# La versión la lleva el script: mira la etiqueta vX.Y.Z más alta del repo y
-# publica la siguiente. Si todavía no hay ninguna, usa MARKETING_VERSION de
-# project.yml (o la que le pases explícitamente).
-#
-# El mensaje es para el commit de tus cambios (todo lo que haya sin commitear,
-# p. ej. lo que acaba de copiar ./update-client.sh). Si hay cambios y no pasas
-# mensaje, el script se para antes de compilar nada.
+# Si todavía no hay ninguna etiqueta, la primera versión es MARKETING_VERSION
+# de project.yml (o la que le pases).
 #
 # Variables opcionales:
 #   AICLIENT_REPO=usuario/repo          repo de la app      (def. rbc33/AIclient-macOS)
@@ -48,7 +45,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 VERSION=""
-MESSAGE=""
 REPLACE=""
 BUMP="patch"
 for arg in "$@"; do
@@ -60,10 +56,9 @@ for arg in "$@"; do
     *)
       if [[ -z "$VERSION" && "$arg" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         VERSION="$arg"
-      elif [[ -z "$MESSAGE" ]]; then
-        MESSAGE="$arg"
       else
-        echo "error: argumento de más: '$arg'. Pon el mensaje del commit entre comillas." >&2
+        echo "error: argumento no válido: '$arg'." >&2
+        echo "       release.sh ya no hace commit: haz antes 'git add -A && git commit -m ... && git push'." >&2
         exit 1
       fi
       ;;
@@ -95,31 +90,26 @@ TAP_OWNER="${TAP%%/*}"
 TAP_SHORT="${TAP#*/homebrew-}"           # rbc33/homebrew-aiclient -> aiclient
 BREW_CASK="$TAP_OWNER/$TAP_SHORT/aiclient" # nombre completo para brew install
 
-# Commit de tus cambios. La etiqueta vX.Y.Z tiene que apuntar al código que
-# llevan el .dmg y el .ipa, así que no se compila nada con cambios sueltos.
+# La etiqueta vX.Y.Z tiene que apuntar al código que llevan el .dmg y el
+# .ipa: nada sin commitear, y tu main igual que el de GitHub.
 if [[ -n "$(git status --porcelain)" ]]; then
-  if [[ -z "$MESSAGE" ]]; then
-    echo "error: hay cambios sin commitear. Pasa el mensaje del commit:" >&2
-    echo "       ./release.sh \"mensaje\"" >&2
-    git status --short >&2
-    exit 1
-  fi
-  git add -A
-  git commit -q -m "$MESSAGE"
-  echo "==> Commit: ${MESSAGE%%$'\n'*}"
-elif [[ -n "$MESSAGE" ]]; then
-  echo "==> No hay cambios sin commitear: se ignora el mensaje"
+  echo "error: hay cambios sin commitear. Haz commit y push primero:" >&2
+  git status --short >&2
+  exit 1
 fi
-
-# Traer lo que haya en GitHub y no esté aquí (p. ej. un cambio hecho desde la
-# web u otro Mac), y las etiquetas de versión. Si no, el push del paso 3 se
-# rechaza ("non-fast-forward") después de haber compilado todo.
-echo "==> Sincronizando con origin/main"
-if ! git pull -q --rebase origin main; then
-  echo >&2
-  echo "error: lo que hay en GitHub choca con tus commits locales (conflicto)." >&2
-  echo "       Mira los archivos con 'git status', o deshaz el intento con" >&2
-  echo "       'git rebase --abort' (tus commits siguen ahí)." >&2
+echo "==> Comprobando que estás igual que GitHub"
+# FETCH_HEAD y no origin/main: así funciona aunque el remoto no tenga
+# configurado el refspec que mantiene origin/main al día.
+git fetch -q origin main
+LOCAL_HEAD="$(git rev-parse HEAD)"
+REMOTE_HEAD="$(git rev-parse FETCH_HEAD)"
+if [[ "$LOCAL_HEAD" != "$REMOTE_HEAD" ]]; then
+  if git merge-base --is-ancestor "$REMOTE_HEAD" "$LOCAL_HEAD"; then
+    echo "error: tienes commits sin subir a GitHub. Haz 'git push origin main' primero." >&2
+  else
+    echo "error: GitHub tiene commits que no tienes aquí. Tráelos primero:" >&2
+    echo "       git pull --rebase origin main" >&2
+  fi
   exit 1
 fi
 git fetch -q --tags origin
@@ -175,7 +165,8 @@ AICLIENT_IPA_NAME="$IPA_NAME" AICLIENT_GITHUB_REPO="$REPO" AICLIENT_PUBLISH=0 ./
 [[ -f "$IPA" ]] || { echo "error: build-ipa.sh no generó $IPA" >&2; exit 1; }
 
 # --- 3. commit + push de la versión y la fuente de SideStore -----------------
-# Solo estos archivos: cualquier otro cambio tuyo sin commitear se queda como está.
+# Solo los archivos que genera este script (ya se comprobó arriba que no
+# había nada más sin commitear).
 ICON="AIclient/Resources/Assets.xcassets/AppIcon.appiconset/icon_ios_1024.png"
 git add project.yml apps.json "$ICON"
 if git diff --cached --quiet -- project.yml apps.json "$ICON"; then
@@ -183,7 +174,7 @@ if git diff --cached --quiet -- project.yml apps.json "$ICON"; then
 else
   git commit -q -m "Release AIclient $VERSION" -- project.yml apps.json "$ICON"
 fi
-git push -q origin HEAD
+git push -q origin HEAD:main
 
 # --- 4. release en GitHub -----------------------------------------------------
 if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then

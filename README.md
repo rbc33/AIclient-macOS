@@ -285,32 +285,40 @@ zip.
 
 ## Publicar una versión: `release.sh`
 
-Todo de una vez, para Mac e iOS:
+El flujo con cada cambio tiene tres pasos: copiar los archivos, hacer commit
+y push, y publicar la release:
 
 ```bash
-./release.sh "Mensaje del commit"             # siguiente parche: 1.0.3 -> 1.0.4
-./release.sh "Mensaje del commit" --minor     # 1.0.3 -> 1.1.0
-./release.sh "Mensaje del commit" --major     # 1.4.2 -> 2.0.0
-./release.sh 0.1.0 "Mensaje del commit"       # versión explícita
-./release.sh "Mensaje" --replace              # rehacer la última versión publicada
+./update-client.sh
+git add -A && git commit -m "Mensaje" && git push origin main
+./release.sh
+```
+
+`release.sh` no hace commit de tus cambios. Se para si queda algo sin
+commitear, o si tu `main` no está igual que el de GitHub, para que la
+etiqueta apunte al mismo código que llevan el `.dmg` y el `.ipa`.
+
+```bash
+./release.sh              # siguiente parche: 1.0.3 -> 1.0.4
+./release.sh --minor      # 1.0.3 -> 1.1.0
+./release.sh --major      # 1.4.2 -> 2.0.0
+./release.sh 0.1.0        # versión explícita
+./release.sh --replace    # rehacer la última versión publicada
 ```
 
 La versión la lleva el script: busca la etiqueta `vX.Y.Z` más alta del repo
 y publica la siguiente. En la primera release (sin etiquetas aún) usa
 `MARKETING_VERSION` de `project.yml`, salvo que le pases una explícita.
 
-Hace, en orden: commit de todo lo que haya sin commitear con ese mensaje →
-`git pull --rebase` (por si hay algo nuevo en GitHub) → `./clean.sh` → fija `MARKETING_VERSION` (y el nº de build =
+Hace, en orden: `./clean.sh` → fija `MARKETING_VERSION` (y el nº de build =
 nº de commits) en `project.yml` → `make-dmg.sh` y `build-ipa.sh` (que
-actualiza `apps.json`) → commit + push de `project.yml` y `apps.json` →
-release `vX.Y.Z` en GitHub con `AIclient-X.Y.Z.dmg` y `AIclient-X.Y.Z.ipa` →
-actualiza la cask del tap de Homebrew (versión + sha256 del `.dmg`) → instala
-o actualiza AIclient en este Mac con `brew`.
+actualiza `apps.json`) → commit "Release AIclient X.Y.Z" de `project.yml` y
+`apps.json` + push (SideStore lee `apps.json` de GitHub) → release `vX.Y.Z`
+en GitHub con `AIclient-X.Y.Z.dmg` y `AIclient-X.Y.Z.ipa` → crea o actualiza
+la cask del tap de Homebrew (versión + sha256 del `.dmg`) → instala o
+actualiza AIclient en este Mac con `brew`.
 
 - Necesita `gh auth login` y que el repo de la app sea **público**.
-- Si hay cambios sin commitear y no le pasas mensaje, se para antes de
-  compilar nada (la etiqueta tiene que apuntar al código que lleva el
-  `.dmg`/`.ipa`). Sin cambios pendientes, el mensaje se puede omitir.
 - El tap es `rbc33/homebrew-aiclient` (`AICLIENT_TAP` para cambiarlo). Si no
   existe en GitHub, el script lo crea junto con `Casks/aiclient.rb`. Usa tu
   copia local en `../homebrew-aiclient` si la hay; si no, lo clona en una
