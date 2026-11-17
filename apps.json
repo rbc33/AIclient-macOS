@@ -30,19 +30,19 @@
       "versions": [
         {
           "version": "1.0.0",
-          "buildVersion": "8",
+          "buildVersion": "19",
           "date": "2026-11-17",
-          "localizedDescription": "Add iOS target, SideStore source, release.sh and clean.sh",
+          "localizedDescription": "Make release.sh publish only; commit and push happen beforehand",
           "downloadURL": "https://github.com/rbc33/AIclient-macOS/releases/download/v1.0.0/AIclient-1.0.0.ipa",
-          "size": 578662,
+          "size": 578663,
           "minOSVersion": "17.0"
         }
       ],
       "version": "1.0.0",
       "versionDate": "2026-11-17",
-      "versionDescription": "Add iOS target, SideStore source, release.sh and clean.sh",
+      "versionDescription": "Make release.sh publish only; commit and push happen beforehand",
       "downloadURL": "https://github.com/rbc33/AIclient-macOS/releases/download/v1.0.0/AIclient-1.0.0.ipa",
-      "size": 578662
+      "size": 578663
     }
   ],
   "news": []
